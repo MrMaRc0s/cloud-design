@@ -1,4 +1,8 @@
 aws_region   = "eu-central-1"
 project_name = "cloud-design"
 environment  = "dev"
+vpc_cidr     = "10.20.0.0/16"
 
+# NAT Gateway has an hourly and data-processing cost. Keep it enabled for a
+# working deployment and destroy the environment after each test session.
+enable_nat_gateway = true

@@ -21,3 +21,14 @@ variable "environment" {
   }
 }
 
+variable "vpc_cidr" {
+  description = "IPv4 address range reserved for the project VPC."
+  type        = string
+  default     = "10.20.0.0/16"
+}
+
+variable "enable_nat_gateway" {
+  description = "Create the billable NAT Gateway required by private workloads at runtime."
+  type        = bool
+  default     = true
+}
