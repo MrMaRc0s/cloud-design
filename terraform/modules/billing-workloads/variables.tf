@@ -1,0 +1,158 @@
+variable "project_name" {
+  description = "Name used to identify and tag project resources."
+  type        = string
+}
+
+variable "environment" {
+  description = "Deployment environment name."
+  type        = string
+}
+
+# --- Network stubs (Developer A's future network module) ---
+
+variable "vpc_id" {
+  description = "VPC that owns the task/EFS security groups. Interface stub: wire to Developer A's network module output."
+  type        = string
+}
+
+variable "vpc_cidr" {
+  description = "CIDR block of the VPC. Interface stub: wire to Developer A's network module output. Scopes billing-app's health-check ingress."
+  type        = string
+}
+
+variable "subnet_ids" {
+  description = "Private subnet IDs the ECS tasks and EFS mount targets use. Interface stub: wire to Developer A's network module output."
+  type        = list(string)
+}
+
+# --- Compute foundation outputs ---
+
+variable "ecs_cluster_name" {
+  description = "Name of the shared ECS cluster (compute-foundation module output)."
+  type        = string
+}
+
+variable "ecs_capacity_provider_name" {
+  description = "Name of the EC2 capacity provider (compute-foundation module output)."
+  type        = string
+}
+
+variable "task_execution_role_arn" {
+  description = "Shared ECS task execution role ARN (compute-foundation module output)."
+  type        = string
+}
+
+variable "task_role_arns" {
+  description = "Map of service name to its dedicated ECS task role ARN (compute-foundation module output)."
+  type        = map(string)
+}
+
+variable "ecr_repository_urls" {
+  description = "Map of service name to its ECR repository URL (compute-foundation module output)."
+  type        = map(string)
+}
+
+variable "service_discovery_namespace_id" {
+  description = "ID of the private DNS namespace (compute-foundation module output)."
+  type        = string
+}
+
+variable "service_discovery_namespace_name" {
+  description = "Name of the private DNS namespace, e.g. cloud-design.internal (compute-foundation module output). Used to build internal DNS names such as billing-database.cloud-design.internal."
+  type        = string
+}
+
+# --- Images ---
+
+variable "image_tag" {
+  description = "Tag to deploy for all three owned images. NOTE: the ECR repos are image_tag_mutability=IMMUTABLE, so a real deploy pipeline must push a new unique tag (e.g. git SHA) each build, not reuse \"latest\"."
+  type        = string
+  default     = "latest"
+}
+
+# --- Billing database config (plain Terraform variables per the joint decision; revisit before real deployment) ---
+
+variable "billing_db_name" {
+  description = "billing-database database name."
+  type        = string
+  default     = "billing"
+}
+
+variable "billing_db_user" {
+  description = "billing-database application user."
+  type        = string
+  default     = "billing_user"
+}
+
+variable "billing_db_password" {
+  description = "billing-database application user password."
+  type        = string
+  sensitive   = true
+}
+
+# --- RabbitMQ config ---
+# rabbitmq_user/password/queue are a cross-team interface: Developer A's
+# api-gateway-app publishes to the same queue with the same credentials
+# (confirmed via srcs/api-gateway-app/tests using rabbitmq_queue="billing_queue").
+
+variable "rabbitmq_user" {
+  description = "Application account both billing-app and api-gateway-app authenticate as. Provisioned at task startup via the Management HTTP API bootstrap sidecar, not baked into the image."
+  type        = string
+  default     = "billing_service"
+}
+
+variable "rabbitmq_password" {
+  description = "Password for rabbitmq_user."
+  type        = string
+  sensitive   = true
+}
+
+variable "rabbitmq_queue" {
+  description = "Durable queue name shared by billing-app (consumer) and api-gateway-app (producer). Must match api-gateway-app's configured queue name exactly."
+  type        = string
+  default     = "billing_queue"
+}
+
+variable "additional_rabbitmq_client_security_group_ids" {
+  description = "Extra security group IDs allowed to reach rabbit-queue on 5672, beyond billing-app's own. Populate with Developer A's api-gateway-app task security group ID at integration time."
+  type        = list(string)
+  default     = []
+}
+
+# --- Sizing ---
+# Deliberately modest: three tasks won't fit on one t3.micro instance
+# alongside OS/agent overhead, so the compute-foundation ASG (managed
+# scaling, max_size=3) will add instances as needed. Running multiple
+# t3.micro instances 24/7 exceeds the combined 750 hrs/month Free Tier
+# allowance faster than a single instance would - factor this into the
+# budget check before any apply.
+
+variable "rabbitmq_cpu" {
+  type    = number
+  default = 256
+}
+
+variable "rabbitmq_memory" {
+  type    = number
+  default = 400
+}
+
+variable "billing_database_cpu" {
+  type    = number
+  default = 256
+}
+
+variable "billing_database_memory" {
+  type    = number
+  default = 400
+}
+
+variable "billing_app_cpu" {
+  type    = number
+  default = 128
+}
+
+variable "billing_app_memory" {
+  type    = number
+  default = 200
+}
