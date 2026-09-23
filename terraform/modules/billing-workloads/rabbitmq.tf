@@ -62,10 +62,9 @@ resource "aws_ecs_task_definition" "rabbitmq" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          "awslogs-group"         = "/ecs/${local.name_prefix}/rabbit-queue"
+          "awslogs-group"         = aws_cloudwatch_log_group.rabbitmq.name
           "awslogs-region"        = data.aws_region.current.region
           "awslogs-stream-prefix" = "rabbit-queue"
-          "awslogs-create-group"  = "true"
         }
       }
     },
@@ -94,10 +93,9 @@ resource "aws_ecs_task_definition" "rabbitmq" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          "awslogs-group"         = "/ecs/${local.name_prefix}/rabbit-queue-bootstrap"
+          "awslogs-group"         = aws_cloudwatch_log_group.rabbitmq_bootstrap.name
           "awslogs-region"        = data.aws_region.current.region
           "awslogs-stream-prefix" = "bootstrap"
-          "awslogs-create-group"  = "true"
         }
       }
     },

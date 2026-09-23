@@ -156,3 +156,23 @@ variable "billing_app_memory" {
   type    = number
   default = 200
 }
+
+# --- Observability ---
+
+variable "log_retention_days" {
+  description = "CloudWatch Logs retention for all four owned log groups (rabbit-queue, its bootstrap sidecar, billing-database, billing-app)."
+  type        = number
+  default     = 14
+}
+
+variable "alarm_notification_email" {
+  description = "Email address subscribed to the billing alerts SNS topic. Leave null to create the topic with no subscriber (e.g. for a first validate-only pass)."
+  type        = string
+  default     = null
+}
+
+variable "cpu_alarm_threshold_percent" {
+  description = "CPUUtilization percent that triggers a high-CPU alarm on each service."
+  type        = number
+  default     = 80
+}

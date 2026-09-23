@@ -33,3 +33,17 @@ resource "aws_efs_mount_target" "billing_database" {
   subnet_id       = each.value
   security_groups = [aws_security_group.efs_billing_database.id]
 }
+
+# Infrastructure-level backup layer for billing data specifically (AWS
+# Backup's daily automatic EFS backups). Complements, not replaces, the
+# pg_dump-based logical backup/restore procedure documented and actually
+# run against a local copy of this same database - see the plan doc.
+# rabbit-queue is deliberately excluded: queue contents are transient
+# in-flight data, not something with a "backup and restore" story.
+resource "aws_efs_backup_policy" "billing_database" {
+  file_system_id = aws_efs_file_system.billing_database.id
+
+  backup_policy {
+    status = "ENABLED"
+  }
+}

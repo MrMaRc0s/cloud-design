@@ -43,10 +43,9 @@ resource "aws_ecs_task_definition" "billing_app" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          "awslogs-group"         = "/ecs/${local.name_prefix}/billing-app"
+          "awslogs-group"         = aws_cloudwatch_log_group.billing_app.name
           "awslogs-region"        = data.aws_region.current.region
           "awslogs-stream-prefix" = "billing-app"
-          "awslogs-create-group"  = "true"
         }
       }
     },
