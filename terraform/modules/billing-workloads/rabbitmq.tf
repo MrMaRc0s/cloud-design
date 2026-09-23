@@ -75,9 +75,9 @@ resource "aws_ecs_task_definition" "rabbitmq" {
       entryPoint = ["sh", "-c"]
       command = [
         <<-SCRIPT
-        until curl -sf -u guest:guest http://localhost:15672/api/whoami >/dev/null; do sleep 2; done
-        curl -sf -u guest:guest -X PUT "http://localhost:15672/api/users/$RABBITMQ_USER" -H 'content-type: application/json' -d "{\"password\":\"$RABBITMQ_PASSWORD\",\"tags\":\"administrator\"}"
-        curl -sf -u guest:guest -X PUT "http://localhost:15672/api/permissions/%2F/$RABBITMQ_USER" -H 'content-type: application/json' -d '{"configure":".*","write":".*","read":".*"}'
+        until curl -sf -u guest:guest http://localhost:15672/api/whoami >/dev/null; do sleep 2; done # gitleaks:allow - RabbitMQ's own public default cred, loopback-only
+        curl -sf -u guest:guest -X PUT "http://localhost:15672/api/users/$RABBITMQ_USER" -H 'content-type: application/json' -d "{\"password\":\"$RABBITMQ_PASSWORD\",\"tags\":\"administrator\"}" # gitleaks:allow - same
+        curl -sf -u guest:guest -X PUT "http://localhost:15672/api/permissions/%2F/$RABBITMQ_USER" -H 'content-type: application/json' -d '{"configure":".*","write":".*","read":".*"}' # gitleaks:allow - same
         SCRIPT
       ]
 
