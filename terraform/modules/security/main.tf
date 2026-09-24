@@ -5,9 +5,6 @@ locals {
     "api-gateway-app",
     "inventory-app",
     "inventory-database",
-    "rabbit-queue",
-    "billing-app",
-    "billing-database",
   ])
 }
 
@@ -108,51 +105,12 @@ resource "aws_vpc_security_group_ingress_rule" "inventory_database_from_app" {
 }
 
 resource "aws_vpc_security_group_egress_rule" "gateway_to_rabbitmq" {
-  security_group_id            = aws_security_group.workload["api-gateway-app"].id
-  referenced_security_group_id = aws_security_group.workload["rabbit-queue"].id
-  ip_protocol                  = "tcp"
-  from_port                    = 5672
-  to_port                      = 5672
-}
-
-resource "aws_vpc_security_group_ingress_rule" "rabbitmq_from_gateway" {
-  security_group_id            = aws_security_group.workload["rabbit-queue"].id
-  referenced_security_group_id = aws_security_group.workload["api-gateway-app"].id
-  ip_protocol                  = "tcp"
-  from_port                    = 5672
-  to_port                      = 5672
-}
-
-resource "aws_vpc_security_group_egress_rule" "billing_to_rabbitmq" {
-  security_group_id            = aws_security_group.workload["billing-app"].id
-  referenced_security_group_id = aws_security_group.workload["rabbit-queue"].id
-  ip_protocol                  = "tcp"
-  from_port                    = 5672
-  to_port                      = 5672
-}
-
-resource "aws_vpc_security_group_ingress_rule" "rabbitmq_from_billing" {
-  security_group_id            = aws_security_group.workload["rabbit-queue"].id
-  referenced_security_group_id = aws_security_group.workload["billing-app"].id
-  ip_protocol                  = "tcp"
-  from_port                    = 5672
-  to_port                      = 5672
-}
-
-resource "aws_vpc_security_group_egress_rule" "billing_to_database" {
-  security_group_id            = aws_security_group.workload["billing-app"].id
-  referenced_security_group_id = aws_security_group.workload["billing-database"].id
-  ip_protocol                  = "tcp"
-  from_port                    = 5432
-  to_port                      = 5432
-}
-
-resource "aws_vpc_security_group_ingress_rule" "billing_database_from_app" {
-  security_group_id            = aws_security_group.workload["billing-database"].id
-  referenced_security_group_id = aws_security_group.workload["billing-app"].id
-  ip_protocol                  = "tcp"
-  from_port                    = 5432
-  to_port                      = 5432
+  security_group_id = aws_security_group.workload["api-gateway-app"].id
+  cidr_ipv4         = var.vpc_cidr
+  ip_protocol       = "tcp"
+  from_port         = 5672
+  to_port           = 5672
+  description       = "Publish billing messages to the RabbitMQ service inside the VPC"
 }
 
 resource "aws_vpc_security_group_egress_rule" "workload_https" {
