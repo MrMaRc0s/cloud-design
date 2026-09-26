@@ -32,8 +32,13 @@ resource "aws_ecs_task_definition" "billing_database" {
 
       environment = [
         { name = "POSTGRES_DB", value = var.billing_db_name },
-        { name = "POSTGRES_USER", value = var.billing_db_user },
-        { name = "POSTGRES_PASSWORD", value = var.billing_db_password },
+      ]
+
+      # Fetched by the ECS task execution role at launch, never a plain
+      # environment value - see variables.tf for why.
+      secrets = [
+        { name = "POSTGRES_USER", valueFrom = "${var.billing_database_secret_arn}:username::" },
+        { name = "POSTGRES_PASSWORD", valueFrom = "${var.billing_database_secret_arn}:password::" },
       ]
 
       healthCheck = {

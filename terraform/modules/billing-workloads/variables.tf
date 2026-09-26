@@ -64,42 +64,35 @@ variable "image_tag" {
   type        = string
 }
 
-# --- Billing database config (plain Terraform variables per the joint decision; revisit before real deployment) ---
+# --- Secrets (compute-foundation module outputs) ---
+# Usernames and passwords are never Terraform variables here - both secrets
+# are populated out-of-band via scripts/put-secret-value.sh, and the ECS
+# task execution role reads them directly into each container's `secrets`
+# block. See the README for why (a Terraform-managed value would land in
+# state even if never written to source).
+
+variable "billing_database_secret_arn" {
+  description = "ARN of the billing-database credentials secret (compute-foundation module output secret_arns[\"billing-database\"]). JSON keys: username, password."
+  type        = string
+}
+
+variable "rabbitmq_secret_arn" {
+  description = "ARN of the rabbitmq credentials secret (compute-foundation module output secret_arns[\"rabbitmq\"]). JSON keys: username, password. Shared with Developer A's api-gateway-app, which authenticates as the same account to publish to the same queue."
+  type        = string
+}
+
+# --- Billing database config ---
 
 variable "billing_db_name" {
-  description = "billing-database database name."
+  description = "billing-database database name. Not sensitive - the credentials that matter are in Secrets Manager."
   type        = string
   default     = "billing"
 }
 
-variable "billing_db_user" {
-  description = "billing-database application user."
-  type        = string
-  default     = "billing_user"
-}
-
-variable "billing_db_password" {
-  description = "billing-database application user password."
-  type        = string
-  sensitive   = true
-}
-
 # --- RabbitMQ config ---
-# rabbitmq_user/password/queue are a cross-team interface: Developer A's
-# api-gateway-app publishes to the same queue with the same credentials
-# (confirmed via srcs/api-gateway-app/tests using rabbitmq_queue="billing_queue").
-
-variable "rabbitmq_user" {
-  description = "Application account both billing-app and api-gateway-app authenticate as. Provisioned at task startup via the Management HTTP API bootstrap sidecar, not baked into the image."
-  type        = string
-  default     = "billing_service"
-}
-
-variable "rabbitmq_password" {
-  description = "Password for rabbitmq_user."
-  type        = string
-  sensitive   = true
-}
+# rabbitmq_queue is a cross-team interface: Developer A's api-gateway-app
+# publishes to the same queue with the same credentials (confirmed via
+# srcs/api-gateway-app/tests using rabbitmq_queue="billing_queue").
 
 variable "rabbitmq_queue" {
   description = "Durable queue name shared by billing-app (consumer) and api-gateway-app (producer). Must match api-gateway-app's configured queue name exactly."

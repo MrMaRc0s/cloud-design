@@ -13,17 +13,6 @@ output "rabbitmq_queue" {
   value       = var.rabbitmq_queue
 }
 
-output "rabbitmq_user" {
-  description = "Account api-gateway-app must authenticate as to publish. Provisioned by the bootstrap sidecar, not baked into the image."
-  value       = var.rabbitmq_user
-}
-
-output "rabbitmq_password" {
-  description = "Password for rabbitmq_user."
-  value       = var.rabbitmq_password
-  sensitive   = true
-}
-
 output "rabbitmq_task_security_group_id" {
   description = "Security group attached to the rabbit-queue task, for reference."
   value       = aws_security_group.rabbitmq_task.id

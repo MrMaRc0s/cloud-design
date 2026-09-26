@@ -108,11 +108,20 @@ from `billing-app`'s security group, `rabbit-queue` only from `billing-app`
 plus whatever Developer A's `api-gateway-app` task security group gets
 added at integration time), not just placed in a shared private subnet.
 
-**Config decision, deliberately scoped for now**: all configuration,
-including database and RabbitMQ passwords, is passed as plain Terraform
-variables rather than AWS Secrets Manager. This needs revisiting before any
-real deployment — tracked in the Terraform module's own comments and in the
-handoff plan, not silently forgotten.
+**Secrets**: usernames and passwords for `billing-database` and RabbitMQ
+(shared with Developer A's `api-gateway-app`, which authenticates as the
+same account to publish to the same queue) live in AWS Secrets Manager, not
+Terraform. `compute-foundation` creates only the empty secret *containers*
+(`aws_secretsmanager_secret`, no `aws_secretsmanager_secret_version`) —
+real values are never written by Terraform, because even a value that never
+appears in `.tf` source would still land in Terraform state the moment a
+resource set it. Real values are populated separately, out-of-band, by
+`scripts/put-secret-value.sh`, which reads a git-ignored local file (see
+`.env.secrets.example`) and calls `aws secretsmanager put-secret-value`
+directly — it must run once before the first task launch, since the ECS
+task execution role fetches these values at container start via each task
+definition's `secrets` block, and a task pointed at an empty secret won't
+start.
 
 ### Observability (`terraform/modules/billing-workloads/observability.tf`)
 

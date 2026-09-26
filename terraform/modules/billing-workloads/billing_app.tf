@@ -23,13 +23,16 @@ resource "aws_ecs_task_definition" "billing_app" {
         { name = "BILLING_DB_HOST", value = local.billing_database_host },
         { name = "BILLING_DB_PORT", value = "5432" },
         { name = "BILLING_DB_NAME", value = var.billing_db_name },
-        { name = "BILLING_DB_USER", value = var.billing_db_user },
-        { name = "BILLING_DB_PASSWORD", value = var.billing_db_password },
         { name = "RABBITMQ_HOST", value = local.rabbitmq_host },
         { name = "RABBITMQ_PORT", value = "5672" },
-        { name = "RABBITMQ_USER", value = var.rabbitmq_user },
-        { name = "RABBITMQ_PASSWORD", value = var.rabbitmq_password },
         { name = "RABBITMQ_QUEUE", value = var.rabbitmq_queue },
+      ]
+
+      secrets = [
+        { name = "BILLING_DB_USER", valueFrom = "${var.billing_database_secret_arn}:username::" },
+        { name = "BILLING_DB_PASSWORD", valueFrom = "${var.billing_database_secret_arn}:password::" },
+        { name = "RABBITMQ_USER", valueFrom = "${var.rabbitmq_secret_arn}:username::" },
+        { name = "RABBITMQ_PASSWORD", valueFrom = "${var.rabbitmq_secret_arn}:password::" },
       ]
 
       healthCheck = {

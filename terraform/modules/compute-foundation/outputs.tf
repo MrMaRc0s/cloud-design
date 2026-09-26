@@ -9,7 +9,7 @@ output "ecs_cluster_name" {
 }
 
 output "ecr_repository_urls" {
-  description = "Map of owned service name to its ECR repository URL."
+  description = "Map of service name to its ECR repository URL, covering all six services."
   value       = { for name, repo in aws_ecr_repository.owned : name => repo.repository_url }
 }
 
@@ -19,8 +19,13 @@ output "task_execution_role_arn" {
 }
 
 output "task_role_arns" {
-  description = "Map of owned service name to its dedicated ECS task role ARN."
+  description = "Map of service name to its dedicated ECS task role ARN, covering all six services."
   value       = { for name, role in aws_iam_role.task : name => role.arn }
+}
+
+output "secret_arns" {
+  description = "Map of credential-set name (billing-database, rabbitmq, inventory-database) to its Secrets Manager secret ARN. Metadata only - no value until scripts/put-secret-value.sh runs."
+  value       = { for name, secret in aws_secretsmanager_secret.credentials : name => secret.arn }
 }
 
 output "service_discovery_namespace_id" {

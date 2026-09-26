@@ -85,9 +85,9 @@ resource "aws_ecs_task_definition" "rabbitmq" {
         { containerName = "rabbit-queue", condition = "HEALTHY" },
       ]
 
-      environment = [
-        { name = "RABBITMQ_USER", value = var.rabbitmq_user },
-        { name = "RABBITMQ_PASSWORD", value = var.rabbitmq_password },
+      secrets = [
+        { name = "RABBITMQ_USER", valueFrom = "${var.rabbitmq_secret_arn}:username::" },
+        { name = "RABBITMQ_PASSWORD", valueFrom = "${var.rabbitmq_secret_arn}:password::" },
       ]
 
       logConfiguration = {
