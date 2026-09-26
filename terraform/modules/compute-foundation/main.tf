@@ -2,6 +2,13 @@ locals {
   name_prefix = "${var.project_name}-${var.environment}"
 }
 
+# Derived instead of taken as a separate input: Developer A's network module
+# doesn't output vpc_cidr, and deriving it here means it can never drift
+# from the VPC's actual range.
+data "aws_vpc" "selected" {
+  id = var.vpc_id
+}
+
 resource "aws_ecs_cluster" "main" {
   name = "${local.name_prefix}-cluster"
 
@@ -70,7 +77,7 @@ resource "aws_security_group" "ecs_instance" {
     from_port   = 0
     to_port     = 65535
     protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr]
+    cidr_blocks = [data.aws_vpc.selected.cidr_block]
   }
 
   egress {
@@ -168,7 +175,7 @@ resource "aws_ecs_cluster_capacity_providers" "main" {
 }
 
 resource "aws_ecr_repository" "owned" {
-  for_each = toset(var.owned_services)
+  for_each = toset(var.service_names)
 
   name                 = "${var.project_name}/${each.value}"
   image_tag_mutability = "IMMUTABLE"
@@ -209,12 +216,12 @@ resource "aws_iam_role_policy_attachment" "task_execution_managed" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-# One task role per owned service, no permissions attached yet. Grows to
-# least privilege as each workload starts calling AWS APIs directly (e.g.
-# Secrets Manager reads, once billing DB/RabbitMQ credentials move off
-# plain env vars).
+# One task role per service, shared by both developers' workloads. Empty
+# for now; each workload module attaches the specific permissions its own
+# service needs (e.g. Secrets Manager reads for billing-database,
+# rabbit-queue, and inventory-database credentials).
 resource "aws_iam_role" "task" {
-  for_each = toset(var.owned_services)
+  for_each = toset(var.service_names)
 
   name = "${local.name_prefix}-${each.value}-task"
 

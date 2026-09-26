@@ -13,11 +13,6 @@ variable "vpc_id" {
   type        = string
 }
 
-variable "vpc_cidr" {
-  description = "CIDR block of the VPC. Interface stub: wire to Developer A's network module output. Scopes the ECS instance security group's ingress to in-VPC traffic only."
-  type        = string
-}
-
 variable "subnet_ids" {
   description = "Private subnet IDs the ECS container instances launch into. Interface stub: wire to Developer A's network module output (module.network.private_subnet_ids)."
   type        = list(string)
@@ -47,10 +42,17 @@ variable "asg_desired_capacity" {
   default     = 1
 }
 
-variable "owned_services" {
-  description = "Developer B owned service names; each gets its own ECR repository and ECS task role."
+variable "service_names" {
+  description = "All six application service names sharing this compute foundation; each gets its own ECR repository and ECS task role. One cluster, one set of shared infrastructure for both developers' workloads."
   type        = list(string)
-  default     = ["rabbit-queue", "billing-app", "billing-database"]
+  default = [
+    "api-gateway-app",
+    "inventory-app",
+    "inventory-database",
+    "rabbit-queue",
+    "billing-app",
+    "billing-database",
+  ]
 }
 
 variable "service_discovery_namespace" {

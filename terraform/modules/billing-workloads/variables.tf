@@ -15,11 +15,6 @@ variable "vpc_id" {
   type        = string
 }
 
-variable "vpc_cidr" {
-  description = "CIDR block of the VPC. Interface stub: wire to Developer A's network module output. Scopes billing-app's health-check ingress."
-  type        = string
-}
-
 variable "subnet_ids" {
   description = "Private subnet IDs the ECS tasks and EFS mount targets use. Interface stub: wire to Developer A's network module output."
   type        = list(string)
@@ -65,9 +60,8 @@ variable "service_discovery_namespace_name" {
 # --- Images ---
 
 variable "image_tag" {
-  description = "Tag to deploy for all three owned images. NOTE: the ECR repos are image_tag_mutability=IMMUTABLE, so a real deploy pipeline must push a new unique tag (e.g. git SHA) each build, not reuse \"latest\"."
+  description = "Tag to deploy for all three owned images - a Git commit SHA or explicit version. Required, no default: the ECR repos are image_tag_mutability=IMMUTABLE, so a real deploy pipeline must push a new unique tag each build, and \"latest\" must never be the deployed release."
   type        = string
-  default     = "latest"
 }
 
 # --- Billing database config (plain Terraform variables per the joint decision; revisit before real deployment) ---

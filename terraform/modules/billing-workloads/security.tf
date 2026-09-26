@@ -2,6 +2,13 @@ locals {
   name_prefix = "${var.project_name}-${var.environment}"
 }
 
+# Derived instead of taken as a separate input: Developer A's network module
+# doesn't output vpc_cidr, and deriving it here means it can never drift
+# from the VPC's actual range.
+data "aws_vpc" "selected" {
+  id = var.vpc_id
+}
+
 resource "aws_security_group" "billing_app_task" {
   name        = "${local.name_prefix}-billing-app-task"
   description = "billing-app ECS task - health checks only, no inbound API traffic"
@@ -12,7 +19,7 @@ resource "aws_security_group" "billing_app_task" {
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr]
+    cidr_blocks = [data.aws_vpc.selected.cidr_block]
   }
 
   egress {
