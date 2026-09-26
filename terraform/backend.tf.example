@@ -1,10 +1,6 @@
-# Not active yet - copy to backend.tf (and run `terraform init -migrate-state`
-# or a fresh `terraform init`) once:
-#   1. Both developers have agreed on the AWS account/region (Phase 0 of the
-#      handoff plan) and applied terraform/bootstrap/ to create the bucket.
-#   2. The shared root that wires both developers' modules together exists
-#      (this repo doesn't have that root yet - each module is still
-#      validated standalone).
+# Example for another AWS account. Apply terraform/bootstrap first, replace
+# the bucket name below with its output, then run `terraform init
+# -migrate-state` (or a fresh `terraform init`).
 #
 # Uses Terraform's native S3 locking (`use_lockfile`, Terraform >= 1.10) -
 # no separate DynamoDB table to create or pay for.
