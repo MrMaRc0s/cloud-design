@@ -19,26 +19,33 @@ never be committed.
 ## Architecture (in progress)
 
 Two developers own separate halves of the infrastructure on branches
-`feat/edge-inventory` (networking, Cognito, API Gateway, `inventory-app`,
-`inventory-database`) and `feat/platform-billing` (compute foundation,
-`rabbit-queue`, `billing-database`, `billing-app`, observability). Only the
-second half exists in Terraform so far; the sections below document it.
+`feat/edge-inventory` (Developer A: VPC/subnets/NAT, security groups,
+Cognito, API Gateway, the internal load balancer) and
+`feat/platform-billing` (Developer B, this branch: compute foundation
+shared by all six services, Billing, Inventory runtime, observability,
+secrets). Developer A's network/security modules exist on their branch;
+this branch documents everything below.
 
 ```
-                        (not yet built - Developer A)
-        client -> HTTPS API Gateway + Cognito -> private VPC Link
+                                (Developer A's branch)
+        client -> HTTPS API Gateway + Cognito -> internal ALB -> VPC Link
                                 |
                                 v
-   +----------------------------------------------------------+
-   |  ECS cluster (EC2 launch type, terraform/modules/         |
-   |  compute-foundation) - shared by both developers          |
-   |                                                            |
-   |   api-gateway-app  --publishes-->  rabbit-queue  <--consumes-- billing-app
-   |   (not yet built)      (this half)  [EFS-backed]   (this half)     |
-   |                                                                    v
-   |                                                            billing-database
-   |                                                              [EFS-backed]
-   +--------------------------------------------------------------------------+
+   +------------------------------------------------------------------+
+   |  ECS cluster (EC2 launch type, terraform/modules/                 |
+   |  compute-foundation) - shared by both developers, NAT-routed      |
+   |                                                                    |
+   |   api-gateway-app --calls--> inventory-app --> inventory-database |
+   |   (Developer A's       (this half, incl.        (this half)       |
+   |    branch)              autoscaling)                              |
+   |        |                                                          |
+   |        `--publishes--> rabbit-queue <--consumes-- billing-app     |
+   |                        (this half,    (this half)                 |
+   |                         EFS-backed)        |                      |
+   |                                             v                     |
+   |                                     billing-database               |
+   |                                       (this half, EFS-backed)      |
+   +--------------------------------------------------------------------+
 ```
 
 ### Compute foundation (`terraform/modules/compute-foundation`)
@@ -52,20 +59,25 @@ second half exists in Terraform so far; the sections below document it.
 - Instances have **no SSH**: no key pair, no port 22 security group rule,
   no public IP. Operator access is via AWS Systems Manager Session
   Manager only (`AmazonSSMManagedInstanceCore` on the instance role).
-- ECR repository per owned image (`rabbit-queue`, `billing-app`,
-  `billing-database`), vulnerability scan-on-push enabled, immutable tags.
-- A shared ECS task execution role (ECR pull + CloudWatch Logs) and one
-  empty per-service task role each, ready to gain least-privilege
-  permissions as a service actually needs an AWS API.
+- ECR repository per service, for all six: `api-gateway-app`,
+  `inventory-app`, `inventory-database`, `rabbit-queue`, `billing-app`,
+  `billing-database` — one shared cluster, one shared set of repos for
+  both developers' workloads. Vulnerability scan-on-push enabled,
+  immutable tags, `force_delete = true` (so a repo that still has images
+  in it doesn't block a full `terraform destroy`).
+- A shared ECS task execution role (ECR pull, CloudWatch Logs, and scoped
+  Secrets Manager reads — see Secrets below) and one empty per-service
+  task role each, all six, ready to gain further least-privilege
+  permissions as a service actually needs another AWS API.
+- Three Secrets Manager secret *containers* (metadata only — see Secrets
+  below) for billing-database, RabbitMQ, and inventory-database.
 - A private DNS namespace (`cloud-design.internal`) for internal service
-  discovery — `billing-database.cloud-design.internal`,
-  `rabbit-queue.cloud-design.internal`.
-- **Known gap, not yet resolved**: the ECS instances need outbound access
-  to the ECS control plane, ECR, and CloudWatch Logs (and SSM, since
-  there's no SSH), and there is currently no NAT Gateway or VPC endpoint
-  providing that path. This is a real functional blocker, not a cost nice-
-  to-have — resolving it is networking's call (egress choice), but it
-  gates whether this module's instances can register at all.
+  discovery, shared by every service that registers with it.
+- Outbound network path for the ECS instances (ECR pulls, CloudWatch Logs,
+  SSM since there's no SSH) is Developer A's NAT Gateway, built on their
+  `feat/edge-inventory` branch (`enable_nat_gateway = true` by default) —
+  confirmed by reading their actual `network` module rather than assumed;
+  this was flagged as an open blocker earlier and is now resolved.
 
 ### Billing workloads (`terraform/modules/billing-workloads`)
 
@@ -108,10 +120,10 @@ from `billing-app`'s security group, `rabbit-queue` only from `billing-app`
 plus whatever Developer A's `api-gateway-app` task security group gets
 added at integration time), not just placed in a shared private subnet.
 
-**Secrets**: usernames and passwords for `billing-database` and RabbitMQ
-(shared with Developer A's `api-gateway-app`, which authenticates as the
-same account to publish to the same queue) live in AWS Secrets Manager, not
-Terraform. `compute-foundation` creates only the empty secret *containers*
+**Secrets**: usernames and passwords for `billing-database`,
+`inventory-database`, and RabbitMQ (shared with Developer A's
+`api-gateway-app`, which authenticates as the same account to publish to
+the same queue) live in AWS Secrets Manager, not Terraform. `compute-foundation` creates only the empty secret *containers*
 (`aws_secretsmanager_secret`, no `aws_secretsmanager_secret_version`) —
 real values are never written by Terraform, because even a value that never
 appears in `.tf` source would still land in Terraform state the moment a
@@ -123,7 +135,7 @@ task execution role fetches these values at container start via each task
 definition's `secrets` block, and a task pointed at an empty secret won't
 start.
 
-### Observability (`terraform/modules/billing-workloads/observability.tf`)
+### Billing observability (`terraform/modules/billing-workloads/observability.tf`)
 
 - CloudWatch log group per container (4 total), 14-day retention, referenced
   directly by each task definition rather than relying on log-group
@@ -143,19 +155,55 @@ start.
   copied-out dump, and confirmed every row came back with the exact
   original values.
 
+### Inventory workloads (`terraform/modules/inventory-workloads`)
+
+Two ECS services, same `awsvpc`/private-subnet/no-public-IP pattern as
+billing. One real interface difference from billing: this module does
+**not** create its own security groups for `inventory-app` /
+`inventory-database` — it takes Developer A's `security` module's SG IDs
+as inputs instead, since that module already models both workloads and
+the gateway→inventory→database traffic path. It still owns one small
+security group of its own for the EFS mount targets, since Developer A's
+`security` module has no NFS/EFS concept.
+
+- **`inventory-database`** — EFS-backed, same pattern as
+  `billing-database`, plus an EFS **access point** this time (fixed at
+  uid/gid 0: the container's entrypoint does `chown -R postgres:postgres`
+  as root on first boot, and Debian's postgresql package doesn't guarantee
+  a stable uid across rebuilds, so a non-root access point uid would fight
+  that chown instead of cooperating with it).
+- **`inventory-app`** — connects to `inventory-database` by internal DNS.
+  **Has no dedicated health endpoint** (confirmed by reading
+  `app/__init__.py` and `app/routes/movies.py` directly — no `health.py`,
+  no `/healthz`, unlike `billing-app` and `api-gateway-app`), so its ECS
+  health check uses `GET /api/movies` instead: it fails unless the app is
+  up *and* its database connection actually works. Also gets **ECS
+  Application Auto Scaling on CPU** (target-tracking, 60% target, min
+  1/max 4) — the one service in this codebase that scales with load,
+  since it's stateless and CRUD-heavy rather than architecturally capped
+  at one writer.
+- Observability mirrors the billing pattern (SNS topic, CPU + running-task
+  alarms, a small dashboard), deliberately without a log-based error-rate
+  alarm: `inventory-app`'s routes return 400/404 as ordinary JSON for
+  client validation failures, never at `ERROR` log level, so that alarm
+  would just sit at zero.
+
 ### Availability, stated plainly
 
-- `rabbit-queue` and `billing-database` are both single-instance
-  (`desired_count = 1`). Both *recover* after task replacement thanks to
-  EFS-backed storage — proven locally, including the node-identity bug
-  above — but neither is highly available: there is downtime during
-  replacement, no clustering, no quorum, no failover. Do not read the
-  recovery evidence above as an HA claim.
-- `billing-app` is the one stateless service here. RabbitMQ's
-  competing-consumers pattern makes it safe to run more than one instance
-  against the same queue, so `desired_count` could be raised for real
-  availability/throughput headroom without the single-writer constraint
-  the two stateful services have — left at 1 for now pending budget.
+- `rabbit-queue`, `billing-database`, and `inventory-database` are all
+  single-instance (`desired_count = 1`). All three *recover* after task
+  replacement thanks to EFS-backed storage — proven locally for the
+  billing side, including the node-identity bug above — but none is
+  highly available: there is downtime during replacement, no clustering,
+  no quorum, no failover. Do not read the recovery evidence above as an
+  HA claim.
+- `billing-app` and `inventory-app` are the two stateless services here.
+  RabbitMQ's competing-consumers pattern makes it safe to run more than
+  one `billing-app` instance against the same queue, so its
+  `desired_count` could be raised for real availability/throughput
+  headroom — left at 1 for now pending budget, unlike `inventory-app`,
+  which already scales automatically on CPU since it has no equivalent
+  single-writer constraint to reason about first.
 
 ### Failure-scenario evidence
 
@@ -186,15 +234,19 @@ Destroy roughly in reverse of apply. Neither of these has been applied yet
 (everything above was validated locally, not against real AWS), but the
 procedure is documented now rather than improvised later:
 
-1. **`billing-workloads`** first — ECS services/tasks, EFS filesystems
-   (rabbit-queue's and billing-database's), security groups, service
-   discovery entries, CloudWatch log groups/alarms/dashboard, SNS topic.
+1. **`billing-workloads`** and **`inventory-workloads`** first (either
+   order — they don't depend on each other) — ECS services/tasks, EFS
+   filesystems, security groups (billing's own; inventory-workloads'
+   single EFS mount-target one), service discovery entries, CloudWatch log
+   groups/alarms/dashboards, SNS topics.
 2. **`compute-foundation`** next — ECS cluster, the Auto Scaling Group
    (terminates the EC2 instances), launch template, capacity provider, ECR
-   repositories. ECR repos have `force_delete = true` specifically so a
-   repo that still has images in it doesn't stop `destroy` partway through
-   — without it, a non-empty repo fails and needs the images deleted
-   manually before retrying.
+   repositories, and the three Secrets Manager containers
+   (`recovery_window_in_days = 0`, so these delete immediately rather than
+   entering a recovery window). ECR repos have `force_delete = true`
+   specifically so a repo that still has images in it doesn't stop
+   `destroy` partway through — without it, a non-empty repo fails and
+   needs the images deleted manually before retrying.
 3. **`bootstrap`** (the state bucket) last, and only when genuinely done
    with the whole exercise, not between ordinary work sessions — every
    other config depends on it for remote state once integration happens.
