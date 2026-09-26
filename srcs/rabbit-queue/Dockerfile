@@ -4,7 +4,7 @@ ENV RABBITMQ_LOGS=- \
     RABBITMQ_SASL_LOGS=-
 
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends rabbitmq-server \
+    && apt-get install --yes --no-install-recommends rabbitmq-server curl \
     && rabbitmq-plugins --offline enable rabbitmq_management \
     && rm -rf /var/lib/apt/lists/*
 
