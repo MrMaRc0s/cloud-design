@@ -64,14 +64,14 @@ resource "aws_security_group_rule" "rabbitmq_from_billing_app" {
 # RABBITMQ_USER/QUEUE, confirmed against srcs/api-gateway-app). Add its task
 # security group ID here at integration time.
 resource "aws_security_group_rule" "rabbitmq_from_additional_clients" {
-  for_each = toset(var.additional_rabbitmq_client_security_group_ids)
+  count = length(var.additional_rabbitmq_client_security_group_ids)
 
   type                     = "ingress"
   from_port                = 5672
   to_port                  = 5672
   protocol                 = "tcp"
   security_group_id        = aws_security_group.rabbitmq_task.id
-  source_security_group_id = each.value
+  source_security_group_id = var.additional_rabbitmq_client_security_group_ids[count.index]
 }
 
 resource "aws_security_group" "billing_database_task" {
