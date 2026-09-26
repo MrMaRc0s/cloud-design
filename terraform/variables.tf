@@ -32,3 +32,19 @@ variable "enable_nat_gateway" {
   type        = bool
   default     = true
 }
+
+variable "image_tag" {
+  description = "Immutable Git SHA or explicit version shared by all six ECR images."
+  type        = string
+
+  validation {
+    condition     = length(trimspace(var.image_tag)) > 0 && var.image_tag != "latest"
+    error_message = "image_tag must be an explicit immutable version, not latest."
+  }
+}
+
+variable "alarm_notification_email" {
+  description = "Optional email address subscribed to workload and edge alarms."
+  type        = string
+  default     = null
+}

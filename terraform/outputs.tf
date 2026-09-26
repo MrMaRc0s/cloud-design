@@ -27,3 +27,33 @@ output "workload_security_group_ids" {
   description = "Security group IDs keyed by workload name."
   value       = module.security.workload_security_group_ids
 }
+
+output "api_endpoint" {
+  description = "Public HTTPS API Gateway endpoint protected by Cognito."
+  value       = module.edge_gateway.api_endpoint
+}
+
+output "cognito_user_pool_id" {
+  description = "Cognito user pool used for audit authentication."
+  value       = module.edge_gateway.cognito_user_pool_id
+}
+
+output "cognito_user_pool_client_id" {
+  description = "Cognito client used by Postman to obtain tokens."
+  value       = module.edge_gateway.cognito_user_pool_client_id
+}
+
+output "ecs_cluster_name" {
+  description = "Shared ECS cluster name used for operational checks."
+  value       = module.compute_foundation.ecs_cluster_name
+}
+
+output "ecr_repository_urls" {
+  description = "ECR repository URLs used by the image publishing script."
+  value       = module.compute_foundation.ecr_repository_urls
+}
+
+output "secret_arns" {
+  description = "Secrets Manager metadata populated out-of-band."
+  value       = module.compute_foundation.secret_arns
+}
