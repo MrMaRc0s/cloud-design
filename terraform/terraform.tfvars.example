@@ -11,6 +11,10 @@ enable_nat_gateway = true
 # m7i-flex.large is Free Tier eligible and supports four tasks per node.
 ecs_instance_type = "m7i-flex.large"
 
+# Set true when the AWS account permits an Amazon Inspector subscription.
+# ECR scan-on-push remains enabled regardless of this setting.
+enable_inspector = false
+
 # Build and publish every image with this exact tag before the full apply.
 image_tag = "replace-with-git-commit-sha"
 

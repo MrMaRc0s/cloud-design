@@ -107,6 +107,10 @@ desired and running counts equal, with zero pending tasks.
   both developers' workloads. Vulnerability scan-on-push enabled,
   immutable tags, `force_delete = true` (so a repo that still has images
   in it doesn't block a full `terraform destroy`).
+- ECR scans every pushed image for known vulnerabilities. Amazon Inspector
+  EC2/ECR scanning is also defined in Terraform and can be enabled with
+  `enable_inspector = true`; it defaults off because AWS Free plan accounts
+  can reject the required Inspector subscription.
 - A shared ECS task execution role (ECR pull, CloudWatch Logs, and scoped
   Secrets Manager reads — see Secrets below) and one empty per-service
   task role each, all six, ready to gain further least-privilege

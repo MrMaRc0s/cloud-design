@@ -39,6 +39,12 @@ variable "ecs_instance_type" {
   default     = "m7i-flex.large"
 }
 
+variable "enable_inspector" {
+  description = "Enable Amazon Inspector EC2 and ECR scanning. Some AWS Free plan accounts reject this service subscription."
+  type        = bool
+  default     = false
+}
+
 variable "image_tag" {
   description = "Immutable Git SHA or explicit version shared by all six ECR images."
   type        = string

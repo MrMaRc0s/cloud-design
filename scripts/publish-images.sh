@@ -117,7 +117,10 @@ for entry in "${services[@]}"; do
   repository="${registry}/${project_name}/${service}"
 
   echo "Building ${service} from ${context}..."
-  docker build -t "${repository}:${tag}" "$context"
+  # ECR basic scanning expects a directly scannable image manifest. Disabling
+  # BuildKit provenance avoids publishing a one-platform OCI image index whose
+  # attestation makes StartImageScan reject the artifact type.
+  docker build --provenance=false -t "${repository}:${tag}" "$context"
 
   echo "Pushing ${repository}:${tag}..."
   docker push "${repository}:${tag}"
