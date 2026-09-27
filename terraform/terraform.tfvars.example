@@ -1,4 +1,22 @@
 aws_region   = "eu-central-1"
 project_name = "cloud-design"
 environment  = "dev"
+vpc_cidr     = "10.20.0.0/16"
 
+# NAT Gateway has an hourly and data-processing cost. Keep it enabled for a
+# working deployment and destroy the environment after each test session.
+enable_nat_gateway = true
+
+# awsvpc gives every ECS task its own ENI. With awsvpcTrunking enabled,
+# m7i-flex.large is Free Tier eligible and supports four tasks per node.
+ecs_instance_type = "m7i-flex.large"
+
+# Set true when the AWS account permits an Amazon Inspector subscription.
+# ECR scan-on-push remains enabled regardless of this setting.
+enable_inspector = false
+
+# Build and publish every image with this exact tag before the full apply.
+image_tag = "replace-with-git-commit-sha"
+
+# Optional. AWS sends a confirmation email before alarm notifications begin.
+alarm_notification_email = null

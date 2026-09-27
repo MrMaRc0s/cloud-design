@@ -21,3 +21,42 @@ variable "environment" {
   }
 }
 
+variable "vpc_cidr" {
+  description = "IPv4 address range reserved for the project VPC."
+  type        = string
+  default     = "10.20.0.0/16"
+}
+
+variable "enable_nat_gateway" {
+  description = "Create the billable NAT Gateway required by private workloads at runtime."
+  type        = bool
+  default     = true
+}
+
+variable "ecs_instance_type" {
+  description = "EC2 type for ECS capacity. m7i-flex.large is Free Tier eligible and supports four awsvpc tasks per node with ENI trunking."
+  type        = string
+  default     = "m7i-flex.large"
+}
+
+variable "enable_inspector" {
+  description = "Enable Amazon Inspector EC2 and ECR scanning. Some AWS Free plan accounts reject this service subscription."
+  type        = bool
+  default     = false
+}
+
+variable "image_tag" {
+  description = "Immutable Git SHA or explicit version shared by all six ECR images."
+  type        = string
+
+  validation {
+    condition     = length(trimspace(var.image_tag)) > 0 && var.image_tag != "latest"
+    error_message = "image_tag must be an explicit immutable version, not latest."
+  }
+}
+
+variable "alarm_notification_email" {
+  description = "Optional email address subscribed to workload and edge alarms."
+  type        = string
+  default     = null
+}

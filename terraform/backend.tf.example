@@ -1,0 +1,16 @@
+# Example for another AWS account. Apply terraform/bootstrap first, replace
+# the bucket name below with its output, then run `terraform init
+# -migrate-state` (or a fresh `terraform init`).
+#
+# Uses Terraform's native S3 locking (`use_lockfile`, Terraform >= 1.10) -
+# no separate DynamoDB table to create or pay for.
+
+terraform {
+  backend "s3" {
+    bucket       = "REPLACE-ME-state-bucket-name" # from terraform/bootstrap output state_bucket_name
+    key          = "cloud-design/terraform.tfstate"
+    region       = "eu-central-1"
+    encrypt      = true
+    use_lockfile = true
+  }
+}

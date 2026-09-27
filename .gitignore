@@ -1,4 +1,6 @@
 .env
+.env.secrets
+!.env.secrets.example
 .terraform/
 *.tfstate
 *.tfstate.*
