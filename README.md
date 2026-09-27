@@ -111,6 +111,11 @@ desired and running counts equal, with zero pending tasks.
   EC2/ECR scanning is also defined in Terraform and can be enabled with
   `enable_inspector = true`; it defaults off because AWS Free plan accounts
   can reject the required Inspector subscription.
+  The audit image scan completed on 2026-09-27. Its critical Debian 12
+  findings currently report no fixed package version (including Perl/OpenSSL,
+  and Erlang/RabbitMQ in `rabbit-queue`), so they remain a visible remediation
+  backlog: rebuild and redeploy the immutable images as soon as Debian
+  publishes fixed packages rather than suppressing the findings.
 - A shared ECS task execution role (ECR pull, CloudWatch Logs, and scoped
   Secrets Manager reads — see Secrets below) and one empty per-service
   task role each, all six, ready to gain further least-privilege
