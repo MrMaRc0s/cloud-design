@@ -22,14 +22,8 @@ resource "aws_ecs_task_definition" "inventory_database" {
     name = "inventory-database-data"
 
     efs_volume_configuration {
-      file_system_id          = aws_efs_file_system.inventory_database.id
-      transit_encryption      = "ENABLED"
-      transit_encryption_port = 2049
-
-      authorization_config {
-        access_point_id = aws_efs_access_point.inventory_database.id
-        iam             = "DISABLED"
-      }
+      file_system_id     = aws_efs_file_system.inventory_database.id
+      transit_encryption = "ENABLED"
     }
   }
 
@@ -106,6 +100,9 @@ resource "aws_ecs_service" "inventory_database" {
 
   deployment_minimum_healthy_percent = 0
   deployment_maximum_percent         = 100
+
+  # The task cannot mount EFS until a mount target exists in each selected AZ.
+  depends_on = [aws_efs_mount_target.inventory_database]
 
   tags = {
     Name = "${local.name_prefix}-inventory-database"

@@ -33,6 +33,12 @@ variable "enable_nat_gateway" {
   default     = true
 }
 
+variable "ecs_instance_type" {
+  description = "EC2 type for ECS capacity. m7i-flex.large is Free Tier eligible and supports four awsvpc tasks per node with ENI trunking."
+  type        = string
+  default     = "m7i-flex.large"
+}
+
 variable "image_tag" {
   description = "Immutable Git SHA or explicit version shared by all six ECR images."
   type        = string

@@ -7,6 +7,10 @@ vpc_cidr     = "10.20.0.0/16"
 # working deployment and destroy the environment after each test session.
 enable_nat_gateway = true
 
+# awsvpc gives every ECS task its own ENI. With awsvpcTrunking enabled,
+# m7i-flex.large is Free Tier eligible and supports four tasks per node.
+ecs_instance_type = "m7i-flex.large"
+
 # Build and publish every image with this exact tag before the full apply.
 image_tag = "replace-with-git-commit-sha"
 

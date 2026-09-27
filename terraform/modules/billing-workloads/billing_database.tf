@@ -91,6 +91,9 @@ resource "aws_ecs_service" "billing_database" {
   deployment_minimum_healthy_percent = 0
   deployment_maximum_percent         = 100
 
+  # Avoid the initial ECS task racing the EFS mount-target provisioning.
+  depends_on = [aws_efs_mount_target.billing_database]
+
   tags = {
     Name = "${local.name_prefix}-billing-database"
   }

@@ -107,12 +107,9 @@ variable "additional_rabbitmq_client_security_group_ids" {
 }
 
 # --- Sizing ---
-# Deliberately modest: three tasks won't fit on one t3.micro instance
-# alongside OS/agent overhead, so the compute-foundation ASG (managed
-# scaling, max_size=3) will add instances as needed. Running multiple
-# t3.micro instances 24/7 exceeds the combined 750 hrs/month Free Tier
-# allowance faster than a single instance would - factor this into the
-# budget check before any apply.
+# Deliberately modest task reservations. The compute-foundation ASG adds
+# instances as needed; cost must still be monitored while the audit
+# environment is running.
 
 variable "rabbitmq_cpu" {
   type    = number

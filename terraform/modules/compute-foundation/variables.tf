@@ -21,7 +21,7 @@ variable "subnet_ids" {
 variable "instance_type" {
   description = "EC2 instance type for ECS container instances."
   type        = string
-  default     = "t3.micro"
+  default     = "m7i-flex.large"
 }
 
 variable "asg_min_size" {

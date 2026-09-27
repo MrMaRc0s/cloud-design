@@ -22,10 +22,17 @@ resource "aws_ecs_cluster" "main" {
   }
 }
 
-# EC2 launch type: cheaper per compute-hour than Fargate and the instance
-# fits the AWS Free Tier (t3.micro, 750 hrs/month), at the cost of owning
-# AMI updates/patching and ASG capacity planning ourselves instead of AWS
-# managing it.
+# awsvpc mode normally consumes one EC2 network interface per task. Trunking
+# raises that task density so the small development instances can run the
+# baseline services and still demonstrate horizontal application scaling.
+resource "aws_ecs_account_setting_default" "awsvpc_trunking" {
+  name  = "awsvpcTrunking"
+  value = "enabled"
+}
+
+# EC2 launch type is cost-effective for this small educational cluster, at
+# the cost of owning AMI updates/patching and ASG capacity planning ourselves
+# instead of AWS managing them as it would with Fargate.
 data "aws_ssm_parameter" "ecs_optimized_ami" {
   name = "/aws/service/ecs/optimized-ami/amazon-linux-2023/recommended/image_id"
 }
@@ -131,8 +138,26 @@ resource "aws_autoscaling_group" "ecs_instance" {
   protect_from_scale_in = true
 
   launch_template {
-    id      = aws_launch_template.ecs_instance.id
-    version = "$Latest"
+    id = aws_launch_template.ecs_instance.id
+    # Pin the concrete version so instance refresh can distinguish old
+    # instances from ones launched from the current template.
+    version = aws_launch_template.ecs_instance.latest_version
+  }
+
+  instance_refresh {
+    strategy = "Rolling"
+
+    preferences {
+      min_healthy_percentage       = 0
+      instance_warmup              = 60
+      skip_matching                = true
+      scale_in_protected_instances = "Refresh"
+    }
+  }
+
+  # ECS managed scaling owns this value after bootstrap.
+  lifecycle {
+    ignore_changes = [desired_capacity]
   }
 
   tag {
@@ -146,6 +171,10 @@ resource "aws_autoscaling_group" "ecs_instance" {
     value               = "true"
     propagate_at_launch = true
   }
+
+  # Trunking applies only to container instances registered after the
+  # account setting is enabled.
+  depends_on = [aws_ecs_account_setting_default.awsvpc_trunking]
 }
 
 resource "aws_ecs_capacity_provider" "ec2" {

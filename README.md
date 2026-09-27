@@ -16,19 +16,64 @@ implemented.
 Cloud credentials, Terraform state, `.tfvars`, and application secrets must
 never be committed.
 
-## Architecture (in progress)
+## Configuration and deployment
 
-Two developers own separate halves of the infrastructure on branches
-`feat/edge-inventory` (Developer A: VPC/subnets/NAT, security groups,
-Cognito, API Gateway, the internal load balancer) and
-`feat/platform-billing` (Developer B, this branch: compute foundation
-shared by all six services, Billing, Inventory runtime, observability,
-secrets). Developer A's network/security modules exist on their branch;
-this branch documents everything below.
+Use an AWS CLI profile with permission to create the documented resources.
+The examples below use `cloud-design` and `eu-central-1`:
+
+```bash
+export AWS_PROFILE=cloud-design
+export AWS_REGION=eu-central-1
+aws sts get-caller-identity
+```
+
+1. Create the remote-state bucket from `terraform/bootstrap`, copy
+   `terraform/backend.tf.example` to `terraform/backend.tf`, and replace the
+   bucket placeholder with the `state_bucket_name` output.
+2. Initialize the root configuration and create its compute foundation first.
+   This targeted bootstrap supplies the ECR repositories and empty Secrets
+   Manager containers before any application task tries to use them:
+
+   ```bash
+   terraform -chdir=terraform init
+   terraform -chdir=terraform apply -target=module.compute_foundation
+   ```
+3. Copy `.env.secrets.example` to `.env.secrets`, replace every
+   `change-me`, and populate Secrets Manager without placing credentials in
+   Terraform state:
+
+   ```bash
+   scripts/put-secret-value.sh --name-prefix cloud-design-dev
+   ```
+
+4. Publish the six images with an immutable version tag, then apply that same
+   tag to the infrastructure:
+
+   ```bash
+   TAG=$(git rev-parse --short HEAD)
+   ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+   scripts/publish-images.sh --account-id "$ACCOUNT_ID" --tag "$TAG"
+   terraform -chdir=terraform plan -var="image_tag=$TAG" -out=tfplan
+   terraform -chdir=terraform apply tfplan
+   ```
+
+5. Confirm that Terraform and the six ECS services are stable:
+
+   ```bash
+   terraform -chdir=terraform plan -var="image_tag=$TAG"
+   aws ecs describe-services --cluster cloud-design-dev-cluster \
+     --services api-gateway-app inventory-app inventory-database \
+       billing-app billing-database rabbit-queue \
+     --query 'services[].{service:serviceName,desired:desiredCount,running:runningCount,pending:pendingCount}'
+   ```
+
+The first command should report `No changes`; every service should have its
+desired and running counts equal, with zero pending tasks.
+
+## Architecture
 
 ```
-                                (Developer A's branch)
-        client -> HTTPS API Gateway + Cognito -> internal ALB -> VPC Link
+        client -> HTTPS API Gateway + Cognito -> VPC Link -> internal ALB
                                 |
                                 v
    +------------------------------------------------------------------+
@@ -36,12 +81,9 @@ this branch documents everything below.
    |  compute-foundation) - shared by both developers, NAT-routed      |
    |                                                                    |
    |   api-gateway-app --calls--> inventory-app --> inventory-database |
-   |   (Developer A's       (this half, incl.        (this half)       |
-   |    branch)              autoscaling)                              |
    |        |                                                          |
    |        `--publishes--> rabbit-queue <--consumes-- billing-app     |
-   |                        (this half,    (this half)                 |
-   |                         EFS-backed)        |                      |
+   |                          (EFS-backed)        |                    |
    |                                             v                     |
    |                                     billing-database               |
    |                                       (this half, EFS-backed)      |
@@ -51,7 +93,7 @@ this branch documents everything below.
 ### Compute foundation (`terraform/modules/compute-foundation`)
 
 - ECS cluster on the **EC2 launch type**, not Fargate: an Auto Scaling
-  Group of `t3.micro` instances (Free-Tier eligible) behind an ECS capacity
+  Group of Free Tier eligible `m7i-flex.large` instances behind an ECS capacity
   provider with managed scaling and managed termination protection.
   Cheaper per compute-hour than Fargate; the cost is owning AMI updates
   (resolved via the SSM `amazon-linux-2023` ECS-optimized AMI parameter,
@@ -166,12 +208,8 @@ the gateway→inventory→database traffic path. It still owns one small
 security group of its own for the EFS mount targets, since Developer A's
 `security` module has no NFS/EFS concept.
 
-- **`inventory-database`** — EFS-backed, same pattern as
-  `billing-database`, plus an EFS **access point** this time (fixed at
-  uid/gid 0: the container's entrypoint does `chown -R postgres:postgres`
-  as root on first boot, and Debian's postgresql package doesn't guarantee
-  a stable uid across rebuilds, so a non-root access point uid would fight
-  that chown instead of cooperating with it).
+- **`inventory-database`** — backed by its own encrypted EFS filesystem,
+  mounted directly with encryption in transit like `billing-database`.
 - **`inventory-app`** — connects to `inventory-database` by internal DNS.
   **Has no dedicated health endpoint** (confirmed by reading
   `app/__init__.py` and `app/routes/movies.py` directly — no `health.py`,
@@ -228,11 +266,55 @@ the only thing that changes at real deployment is the transport (Docker
 bridge network → private VPC + service discovery), not the contract being
 proven here.
 
-### Cleanup (this half)
+## Audit usage
 
-Destroy roughly in reverse of apply. Neither of these has been applied yet
-(everything above was validated locally, not against real AWS), but the
-procedure is documented now rather than improvised later:
+API Gateway rejects anonymous requests. Create/reset an audit user and obtain
+a one-hour Cognito ID token without saving its password in the repository:
+
+```bash
+TOKEN=$(scripts/cognito-token.sh audit@example.com)
+API=$(terraform -chdir=terraform output -raw api_endpoint)
+curl -i -H "Authorization: Bearer $TOKEN" "$API/api/movies/"
+```
+
+Use the same `Authorization` header in Postman. The main functional checks are:
+
+```bash
+curl -i -X POST "$API/api/movies/" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"A new movie","description":"Very short description"}'
+
+curl -i -X POST "$API/api/billing/" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"user_id":"20","number_of_items":"99","total_amount":"250"}'
+```
+
+To demonstrate asynchronous resilience, set `billing-app` to zero tasks,
+repeat the billing request with `user_id=22`, and restore it. The request still
+returns `200`; RabbitMQ retains it and the restarted consumer writes it to
+PostgreSQL:
+
+```bash
+aws ecs update-service --cluster cloud-design-dev-cluster \
+  --service billing-app --desired-count 0
+aws ecs wait services-stable --cluster cloud-design-dev-cluster \
+  --services billing-app
+# Send the user_id=22 request here.
+aws ecs update-service --cluster cloud-design-dev-cluster \
+  --service billing-app --desired-count 1
+aws ecs wait services-stable --cluster cloud-design-dev-cluster \
+  --services billing-app
+```
+
+CloudWatch log groups, dashboards, alarms, and ECS service metrics provide the
+runtime evidence for troubleshooting and scaling. EC2 nodes have no SSH or
+public IP; operational access uses Systems Manager Session Manager.
+
+## Cleanup
+
+Destroy roughly in reverse of apply:
 
 1. **`billing-workloads`** and **`inventory-workloads`** first (either
    order — they don't depend on each other) — ECS services/tasks, EFS
@@ -264,4 +346,3 @@ Known leftovers to check for even after `destroy` reports success:
   state history, not an oversight.
 - **CloudWatch Logs** should self-expire per each log group's
   `retention_in_days`, but worth a spot-check rather than assuming.
-

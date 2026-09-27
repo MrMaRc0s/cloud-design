@@ -28,7 +28,7 @@ module "compute_foundation" {
   subnet_ids = module.network.private_subnet_ids
 
   # Everything else has a sensible default - override only if needed:
-  # instance_type              = "t3.micro"
+  # instance_type              = "m7i-flex.large"
   # asg_min_size               = 1
   # asg_max_size               = 3
   # asg_desired_capacity       = 1
@@ -49,7 +49,7 @@ module "compute_foundation" {
 | `environment` | yes | `dev` / `staging` / `prod`. |
 | `vpc_id` | yes | Interface stub — Developer A's `network` module output. |
 | `subnet_ids` | yes | Interface stub — Developer A's `network` module `private_subnet_ids`. |
-| `instance_type` | no (`t3.micro`) | ECS container instance type. |
+| `instance_type` | no (`m7i-flex.large`) | Free Tier eligible ECS container instance type; supports four `awsvpc` tasks per node with trunking. |
 | `asg_min_size` / `asg_max_size` / `asg_desired_capacity` | no (`1`/`3`/`1`) | Auto Scaling Group sizing. |
 | `service_names` | no (all six) | ECR repos + task roles are created for exactly this list. |
 | `service_discovery_namespace` | no (`cloud-design.internal`) | Private DNS zone name. |
@@ -65,4 +65,3 @@ module "compute_foundation" {
 | `secret_arns` (map: `billing-database`, `rabbitmq`, `inventory-database`) | `billing-workloads`, `inventory-workloads`, and Developer A's `api-gateway-app` (for the shared `rabbitmq` secret). |
 | `service_discovery_namespace_id` / `_name` | Every workload module's `aws_service_discovery_service`. |
 | `ecs_instance_security_group_id`, `ecs_autoscaling_group_name` | Reference / observability only. |
-

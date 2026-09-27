@@ -19,10 +19,11 @@ module "security" {
 module "compute_foundation" {
   source = "./modules/compute-foundation"
 
-  project_name = var.project_name
-  environment  = var.environment
-  vpc_id       = module.network.vpc_id
-  subnet_ids   = module.network.private_subnet_ids
+  project_name  = var.project_name
+  environment   = var.environment
+  vpc_id        = module.network.vpc_id
+  subnet_ids    = module.network.private_subnet_ids
+  instance_type = var.ecs_instance_type
 }
 
 module "billing_workloads" {
