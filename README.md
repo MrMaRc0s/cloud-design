@@ -324,6 +324,13 @@ the inventory service publicly. During and after the test, record desired and
 running task counts plus the `CPUUtilization` CloudWatch metric. The temporary
 task exits by itself and stores no data.
 
+On 2026-09-28 this test triggered the target-tracking alarm successfully. ECS
+first changed `inventory-app` from one to two desired tasks and then from two
+to the configured maximum of four. The service stabilized at
+`desired=4, running=4, pending=0`; the temporary load task was then stopped and
+the target-tracking policy was left to return the service toward its minimum
+after its low-CPU evaluation and 120-second scale-in cooldown.
+
 ## Cost management
 
 The main recurring costs are the NAT Gateway, internal ALB, ECS EC2 capacity,
