@@ -3,29 +3,42 @@
 AWS deployment of the movie inventory and asynchronous billing platform built
 in the previous CRUD Master, Play With Containers, and Orchestrator projects.
 
-The repository currently contains the six tested container services. AWS
-infrastructure is defined with Terraform and will be documented here as it is
-implemented.
+The repository contains all six container services and the complete Terraform
+configuration used to run them on AWS.
 
 ## Local prerequisites
 
 - Docker
 - Terraform
-- AWS CLI v2
+- AWS CLI v2.32 or newer (required for temporary `aws login` credentials)
 
 Cloud credentials, Terraform state, `.tfvars`, and application secrets must
 never be committed.
 
 ## Configuration and deployment
 
-Use an AWS CLI profile with permission to create the documented resources.
-The examples below use `cloud-design` and `eu-central-1`:
+The bootstrap configuration creates a minimal console user and a project
+operator role. Root is used only to create or repair this IAM bootstrap; normal
+Terraform and audit commands use temporary assumed-role credentials:
 
 ```bash
-export AWS_PROFILE=cloud-design
+aws login --profile cloud-design-login --region eu-central-1
+aws configure set source_profile cloud-design-login \
+  --profile cloud-design-operator
+aws configure set credential_process \
+  'aws configure export-credentials --profile cloud-design-operator --format process' \
+  --profile cloud-design-terraform
+aws configure set region eu-central-1 --profile cloud-design-terraform
+
+export AWS_PROFILE=cloud-design-terraform
 export AWS_REGION=eu-central-1
 aws sts get-caller-identity
 ```
+
+The resulting ARN must contain `assumed-role/cloud-design-operator`, never
+`:root`. The login user has no access keys and can only authenticate locally
+and assume this role. The role is region-limited, can access only the project
+state bucket, and can manage IAM roles/profiles only under `cloud-design-*`.
 
 1. Create the remote-state bucket from `terraform/bootstrap`, copy
    `terraform/backend.tf.example` to `terraform/backend.tf`, and replace the
@@ -57,10 +70,13 @@ aws sts get-caller-identity
    terraform -chdir=terraform apply tfplan
    ```
 
-5. Confirm that Terraform and the six ECS services are stable:
+5. Confirm that Terraform and the six ECS services are stable. Read the
+   deployed tag from Terraform state rather than assuming the current
+   documentation commit was used to build the images:
 
    ```bash
-   terraform -chdir=terraform plan -var="image_tag=$TAG"
+   DEPLOYED_TAG=$(terraform -chdir=terraform output -raw deployed_image_tag)
+   terraform -chdir=terraform plan -var="image_tag=$DEPLOYED_TAG"
    aws ecs describe-services --cluster cloud-design-dev-cluster \
      --services api-gateway-app inventory-app inventory-database \
        billing-app billing-database rabbit-queue \
@@ -72,23 +88,24 @@ desired and running counts equal, with zero pending tasks.
 
 ## Architecture
 
+```mermaid
+flowchart LR
+    Client[Client / Postman] -->|HTTPS + JWT| APIGW[API Gateway]
+    Cognito[Cognito] -->|validates token| APIGW
+    APIGW -->|VPC Link| ALB[Internal ALB]
+    ALB --> Gateway[API Gateway App]
+    Gateway -->|HTTP :8080| Inventory[Inventory App]
+    Inventory -->|PostgreSQL :5432| InventoryDB[(Inventory Database)]
+    Gateway -->|AMQP :5672| Rabbit[RabbitMQ]
+    Rabbit --> Billing[Billing App]
+    Billing -->|PostgreSQL :5432| BillingDB[(Billing Database)]
+    InventoryDB --- InventoryEFS[(Encrypted EFS)]
+    BillingDB --- BillingEFS[(Encrypted EFS)]
+    Rabbit --- RabbitEFS[(Encrypted EFS)]
 ```
-        client -> HTTPS API Gateway + Cognito -> VPC Link -> internal ALB
-                                |
-                                v
-   +------------------------------------------------------------------+
-   |  ECS cluster (EC2 launch type, terraform/modules/                 |
-   |  compute-foundation) - shared by both developers, NAT-routed      |
-   |                                                                    |
-   |   api-gateway-app --calls--> inventory-app --> inventory-database |
-   |        |                                                          |
-   |        `--publishes--> rabbit-queue <--consumes-- billing-app     |
-   |                          (EFS-backed)        |                    |
-   |                                             v                     |
-   |                                     billing-database               |
-   |                                       (this half, EFS-backed)      |
-   +--------------------------------------------------------------------+
-```
+
+Only API Gateway is public. The ALB, ECS tasks, databases, RabbitMQ, EFS mount
+targets, and EC2 capacity remain inside the VPC.
 
 ### Compute foundation (`terraform/modules/compute-foundation`)
 
@@ -252,6 +269,77 @@ security group of its own for the EFS mount targets, since Developer A's
   which already scales automatically on CPU since it has no equivalent
   single-writer constraint to reason about first.
 
+### Security boundaries and accepted trade-offs
+
+- Public requests use the AWS API Gateway HTTPS endpoint and require a Cognito
+  JWT. Anonymous requests are rejected with `401`.
+- ECS tasks have no public IP. Security groups allow only the required
+  gateway→inventory, inventory→database, gateway→RabbitMQ, and
+  billing→database paths.
+- Runtime credentials live in Secrets Manager and are injected into task
+  definitions. No secret value is stored in Git or Terraform state.
+- EFS and the Terraform state bucket are encrypted at rest; EFS mounts and
+  state access require encrypted transport.
+- Internal application HTTP, AMQP, and PostgreSQL traffic is isolated inside
+  the VPC and authenticated where supported, but is not end-to-end TLS. A
+  production hardening iteration would enable PostgreSQL/RabbitMQ TLS and an
+  HTTPS internal listener or service mesh.
+- Application and database services currently start as one task. ECS replaces
+  failed tasks and EFS preserves their data, but the stateful services are not
+  clustered and have a short recovery window rather than zero-downtime HA.
+- ECR scans every immutable image on push. Known Debian findings without a
+  published fixed package remain visible; images must be rebuilt when fixes
+  become available rather than suppressing the findings.
+
+## Monitoring and logging
+
+All application output is sent to CloudWatch Logs with 14-day retention.
+Container Insights, three dashboards, and twelve alarms cover CPU, running
+task count, API 5xx responses, unhealthy ALB targets, and billing errors.
+Optional email subscriptions use SNS.
+
+Useful audit commands:
+
+```bash
+aws cloudwatch list-dashboards \
+  --dashboard-name-prefix cloud-design-dev
+aws cloudwatch describe-alarms \
+  --alarm-name-prefix cloud-design-dev \
+  --query 'MetricAlarms[].{name:AlarmName,state:StateValue}'
+aws logs tail /ecs/cloud-design-dev/api-gateway-app \
+  --since 15m --format short
+aws logs tail /ecs/cloud-design-dev/billing-app \
+  --since 15m --format short
+```
+
+## Scaling validation
+
+`api-gateway-app` scales from 1–3 tasks and `inventory-app` from 1–4 tasks,
+both at a 60% CPU target. The ECS capacity provider scales its EC2 Auto
+Scaling Group from 1–3 instances when tasks need additional capacity.
+
+The audit load test runs from a temporary ECS task carrying the gateway
+security group, so it exercises the real private service path without opening
+the inventory service publicly. During and after the test, record desired and
+running task counts plus the `CPUUtilization` CloudWatch metric. The temporary
+task exits by itself and stores no data.
+
+## Cost management
+
+The main recurring costs are the NAT Gateway, internal ALB, ECS EC2 capacity,
+EFS, and CloudWatch. One shared ECS cluster, small initial replica counts,
+14-day log retention, automatic EFS sizing, and short audit windows limit the
+cost. AWS Budgets must remain enabled and Cost Explorer should be checked
+before and after load testing. On 2026-09-28, Cost Explorer reported about
+`$0.052` of unblended service cost for the month; free-plan credits may hide
+additional list-price usage, so this is evidence, not a future cost guarantee.
+
+```bash
+aws ce get-cost-and-usage \
+  --time-period Start=2026-09-01,End=2026-09-29 \
+  --granularity MONTHLY --metrics UnblendedCost
+```
+
 ### Failure-scenario evidence
 
 Verified end-to-end locally (Docker network, all four images including
@@ -276,6 +364,14 @@ bridge network → private VPC + service discovery), not the contract being
 proven here.
 
 ## Audit usage
+
+Use the non-root operator profile throughout the audit:
+
+```bash
+export AWS_PROFILE=cloud-design-terraform
+export AWS_REGION=eu-central-1
+aws sts get-caller-identity
+```
 
 API Gateway rejects anonymous requests. Create/reset an audit user and obtain
 a one-hour Cognito ID token without saving its password in the repository:
