@@ -57,3 +57,8 @@ output "secret_arns" {
   description = "Secrets Manager metadata populated out-of-band."
   value       = module.compute_foundation.secret_arns
 }
+
+output "deployed_image_tag" {
+  description = "Immutable image tag expected by all six ECS task definitions."
+  value       = var.image_tag
+}
